@@ -1,0 +1,42 @@
+<svg width="200" height="50" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Zeta symbol/icon -->
+  <g transform="translate(10, 10)">
+    <!-- Outer targeting ring -->
+    <circle cx="15" cy="15" r="12" stroke="currentColor" stroke-width="1.5" 
+            fill="none" opacity="0.8" stroke-dasharray="4,2"/>
+    
+    <!-- Inner targeting crosshairs -->
+    <g stroke="currentColor" stroke-width="1" opacity="0.7">
+      <line x1="5" y1="15" x2="25" y2="15"/>
+      <line x1="15" y1="5" x2="15" y2="25"/>
+    </g>
+    
+    <!-- Central triangle (delta/AI core) -->
+    <path d="M15 8 L20 20 L10 20 Z" fill="currentColor" opacity="0.9"/>
+    
+    <!-- Corner brackets -->
+    <g stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.6">
+      <path d="M3 3 L3 8 M3 3 L8 3"/>
+      <path d="M27 3 L27 8 M27 3 L22 3"/>
+      <path d="M3 27 L3 22 M3 27 L8 27"/>
+      <path d="M27 27 L27 22 M27 27 L22 27"/>
+    </g>
+  </g>
+  
+  <!-- ZETA text -->
+  <g transform="translate(55, 8)" fill="currentColor" font-family="system-ui, sans-serif" 
+     font-weight="700" font-size="24" letter-spacing="2px">
+    <text y="24" opacity="0.9">ZETA</text>
+  </g>
+  
+  <!-- Subtle glow effect -->
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
