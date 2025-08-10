@@ -1,0 +1,25 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 10
+
+[networking]
+domains = []
+
+[env]
+NODE_ENV = "production"
+
+[[services]]
+name = "fantasma-firewall"
+source = "."
+
+[services.build]
+buildCommand = "npm run build"
+startCommand = "npm start"
+
+[services.deploy]
+port = 5000
+healthcheckPath = "/api/dashboard/status"
+healthcheckTimeout = 30
