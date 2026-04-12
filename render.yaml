@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: fantasma-firewall
+    env: node
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/dashboard/status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false  # Set this in Render dashboard
+    autoDeploy: true
+    scaling:
+      minInstances: 1
+      maxInstances: 3

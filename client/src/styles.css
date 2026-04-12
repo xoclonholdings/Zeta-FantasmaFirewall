@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 223 39% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 223 39% 12%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 190 95% 56%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 25% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 222 25% 18%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 222 25% 18%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 76% 56%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 28% 22%;
+    --input: 220 28% 22%;
+    --ring: 190 95% 56%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .bg-navy-900 { background-color: #08101f; }
+  .bg-navy-800 { background-color: #101a2f; }
+  .bg-navy-750 { background-color: #16233d; }
+  .bg-navy-700 { background-color: #1b2b45; }
+  .bg-navy-600 { background-color: #27415f; }
+  .border-navy-600 { border-color: #27415f; }
+  .border-navy-500 { border-color: #3a5676; }
+  .text-cyber-blue, .cyber-blue { color: #3fcfff; }
+  .text-cyber-green, .cyber-green { color: #4df2c2; }
+  .text-cyber-purple, .cyber-purple { color: #c4a4ff; }
+  .text-cyber-orange, .cyber-orange { color: #ffb24a; }
+  .bg-cyber-blue { background-color: #198fbd; }
+  .bg-cyber-green { background-color: #169f77; }
+  .bg-cyber-purple { background-color: #7b59d1; }
+  .bg-cyber-orange { background-color: #d48a28; }
+}
