@@ -7,6 +7,66 @@ import { firewallService } from "../services/firewall-service";
 import { zetaCore } from "../services/zeta-core";
 
 export function registerSecurityRoutes(app: Express) {
+  app.get("/api/integration/firewall/status", async (req, res) => {
+    const configuredToken = process.env.ZETA_SHARED_TOKEN?.trim();
+    const bearerToken = req.headers.authorization?.replace(/^Bearer\s+/i, "").trim();
+    const headerToken = typeof req.headers["x-zeta-integration-token"] === "string"
+      ? req.headers["x-zeta-integration-token"].trim()
+      : "";
+
+    if (configuredToken && bearerToken !== configuredToken && headerToken !== configuredToken) {
+      res.status(401).json({ message: "Unauthorized integration request" });
+      return;
+    }
+
+    try {
+      const [systemMetrics, securityEvents, zetaCoreStatus] = await Promise.all([
+        storage.getLatestSystemMetrics(),
+        storage.getSecurityEvents(10),
+        zetaCore.getStatus(),
+      ]);
+
+      res.json({
+        system: "Fantasma Firewall",
+        status: "operational",
+        visibility: {
+          publicBaseUrl: process.env.ZETA_PUBLIC_BASE_URL?.trim() || "",
+          vpnBaseUrl: process.env.ZETA_VPN_BASE_URL?.trim() || "",
+          vpnProvider: process.env.ZETA_VPN_PROVIDER?.trim() || "",
+        },
+        zetaCore: zetaCoreStatus,
+        threatCounters: firewallService.getThreatCounters(),
+        latestMetrics: systemMetrics,
+        recentSecurityEvents: securityEvents,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch firewall integration status" });
+    }
+  });
+
+  app.get("/api/firewall/public-status", async (_req, res) => {
+    try {
+      const [systemMetrics, zetaCoreStatus] = await Promise.all([
+        storage.getLatestSystemMetrics(),
+        zetaCore.getStatus(),
+      ]);
+
+      res.json({
+        system: "Fantasma Firewall",
+        status: "operational",
+        publicBaseUrl: process.env.ZETA_PUBLIC_BASE_URL?.trim() || "",
+        vpnProvider: process.env.ZETA_VPN_PROVIDER?.trim() || "",
+        zetaCore: zetaCoreStatus,
+        threatCounters: firewallService.getThreatCounters(),
+        latestMetrics: systemMetrics,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch public firewall status" });
+    }
+  });
+
   app.get("/api/dashboard/status", async (_req, res) => {
     try {
       const [securityEvents, systemMetrics, zwapProtection, encryptionLayers, networkNodes, zetaCoreStatus] =

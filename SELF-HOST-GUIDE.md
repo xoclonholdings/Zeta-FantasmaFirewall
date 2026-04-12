@@ -387,6 +387,31 @@ curl http://localhost:3000/api/dashboard/status
 curl https://your-domain.com/api/dashboard/status
 ```
 
+### 4. VPN + ZedAI Integration
+Use a split-access model:
+
+- Public access for operators: `https://firewall.yourdomain.com`
+- Private VPN access for ZedAI: `http://<vpn-private-ip>:3000`
+
+Add these variables to your `.env`:
+
+```env
+ZETA_PUBLIC_BASE_URL=https://firewall.yourdomain.com
+ZETA_VPN_BASE_URL=http://100.x.x.x:3000
+ZETA_VPN_PROVIDER=Tailscale
+ZETA_SHARED_TOKEN=replace-with-a-long-random-secret
+```
+
+ZedAI should poll:
+
+- `GET /api/integration/firewall/status` with `Authorization: Bearer <ZETA_SHARED_TOKEN>`
+
+Public health can stay available at:
+
+- `GET /api/firewall/public-status`
+
+If you are using Tailscale, install it on both the ZedAI host and the firewall host, verify they can reach each other over the `100.x.x.x` address range, and prefer the VPN URL inside ZedAI so admin traffic never depends on the public internet path.
+
 ### 4. Backup Strategy
 ```bash
 # Database backup script

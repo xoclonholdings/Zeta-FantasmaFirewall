@@ -207,6 +207,34 @@ For custom domains:
 - Configure SSL certificates (Let's Encrypt)
 - Ensure secure cookie settings
 
+## VPN + Custom Domain for ZedAI
+
+If you want Fantasma Firewall exposed on your domain and also reachable privately from ZedAI, use both a public HTTPS endpoint and a VPN-only endpoint:
+
+- Public domain example: `https://firewall.yourdomain.com`
+- Private VPN example: `http://100.x.y.z:5000` for Tailscale or your WireGuard/OpenVPN private address
+
+Recommended environment variables:
+
+```env
+ZETA_PUBLIC_BASE_URL=https://firewall.yourdomain.com
+ZETA_VPN_BASE_URL=http://100.x.y.z:5000
+ZETA_VPN_PROVIDER=Tailscale
+ZETA_SHARED_TOKEN=generate-a-long-random-secret
+```
+
+Integration endpoints:
+
+- Public health/readout: `/api/firewall/public-status`
+- Authenticated ZedAI integration endpoint: `/api/integration/firewall/status`
+
+The integration endpoint accepts either:
+
+- `Authorization: Bearer <ZETA_SHARED_TOKEN>`
+- `x-zeta-integration-token: <ZETA_SHARED_TOKEN>`
+
+Use the public domain for browser access and the VPN URL for ZedAI server-to-server polling whenever both are available.
+
 ## Troubleshooting
 
 ### Common Issues
