@@ -1,19 +1,18 @@
 import { 
   users, securityEvents, threatPatterns, systemMetrics, zwapProtection, 
   encryptionLayers, networkNodes, badActors, dataDeprecation, quantumProtocols,
-  faqCategories, faqItems, howToGuides,
+  faqCategories, faqItems, howToGuides, integrityEvents, executionRecords, integrityFindings,
   type User, type InsertUser, type SecurityEvent, type InsertSecurityEvent,
   type ThreatPattern, type InsertThreatPattern, type SystemMetric, type InsertSystemMetric,
   type ZwapProtection, type InsertZwapProtection, type EncryptionLayer, type InsertEncryptionLayer,
   type NetworkNode, type InsertNetworkNode, type BadActor, type InsertBadActor,
   type DataDeprecation, type InsertDataDeprecation, type QuantumProtocol, type InsertQuantumProtocol,
   type FaqCategory, type InsertFaqCategory, type FaqItem, type InsertFaqItem,
-  type HowToGuide, type InsertHowToGuide
+  type HowToGuide, type InsertHowToGuide, type IntegrityEvent, type InsertIntegrityEvent,
+  type ExecutionRecord, type InsertExecutionRecord, type IntegrityFinding, type InsertIntegrityFinding
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lt } from "drizzle-orm";
-import session from "express-session";
-import connectPg from "connect-pg-simple";
+import { eq, desc, and, gte, lt, inArray, sql } from "drizzle-orm";
 import { cache } from "./cache";
 
 // Disabled PostgresSessionStore to prevent IDX_session_expire error
@@ -39,6 +38,15 @@ export interface IStorage {
   createSecurityEvent(event: InsertSecurityEvent): Promise<SecurityEvent>;
   updateSecurityEventStatus(id: number, status: string): Promise<SecurityEvent | undefined>;
   bulkCreateSecurityEvents(events: InsertSecurityEvent[]): Promise<SecurityEvent[]>;
+  getIntegrityEvents(ownerId: string, limit?: number, outcome?: string): Promise<IntegrityEvent[]>;
+  createIntegrityEvent(event: InsertIntegrityEvent): Promise<IntegrityEvent>;
+  getIntegrityFindings(ownerId: string, limit?: number): Promise<IntegrityFinding[]>;
+  createIntegrityFinding(finding: InsertIntegrityFinding): Promise<IntegrityFinding>;
+  getExecutionRecord(ownerId: string, id: string): Promise<ExecutionRecord | undefined>;
+  reserveExecutionRecord(record: InsertExecutionRecord): Promise<{ record: ExecutionRecord; inserted: boolean }>;
+  claimExecutionRecord(ownerId: string, id: string, actorId: string): Promise<ExecutionRecord | undefined>;
+  updateExecutionRecordState(ownerId: string, id: string, state: string, resultEvidence: Record<string, unknown>, options?: { actorId?: string; expectedStates?: string[] }): Promise<ExecutionRecord | undefined>;
+  getExecutionStateCounts(ownerId: string): Promise<Array<{ state: string; count: number }>>;
 
   // Threat patterns
   getThreatPatterns(): Promise<ThreatPattern[]>;
@@ -111,7 +119,7 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
     const cacheKey = `user:${id}`;
     const cached = cache.getUser(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as User;
 
     const [user] = await db.select().from(users).where(eq(users.id, id));
     if (user) {
@@ -252,6 +260,19 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
+  async getIntegrityEvents(ownerId: string, limit = 100, outcome?: string): Promise<IntegrityEvent[]> {
+    const where = outcome ? and(eq(integrityEvents.ownerId, ownerId), eq(integrityEvents.outcome, outcome)) : eq(integrityEvents.ownerId, ownerId);
+    return db.select().from(integrityEvents).where(where).orderBy(desc(integrityEvents.occurredAt)).limit(Math.min(Math.max(limit, 1), 500));
+  }
+  async createIntegrityEvent(event: InsertIntegrityEvent): Promise<IntegrityEvent> { const [created] = await db.insert(integrityEvents).values(event).returning(); cache.invalidateDashboard(); return created; }
+  async getIntegrityFindings(ownerId: string, limit = 100): Promise<IntegrityFinding[]> { return db.select().from(integrityFindings).where(eq(integrityFindings.ownerId, ownerId)).orderBy(desc(integrityFindings.updatedAt)).limit(Math.min(Math.max(limit, 1), 500)); }
+  async createIntegrityFinding(finding: InsertIntegrityFinding): Promise<IntegrityFinding> { const [created] = await db.insert(integrityFindings).values(finding).returning(); cache.invalidateDashboard(); return created; }
+  async getExecutionRecord(ownerId: string, id: string): Promise<ExecutionRecord | undefined> { const [record] = await db.select().from(executionRecords).where(and(eq(executionRecords.ownerId, ownerId), eq(executionRecords.id, id))); return record; }
+  async reserveExecutionRecord(record: InsertExecutionRecord): Promise<{ record: ExecutionRecord; inserted: boolean }> { const [inserted] = await db.insert(executionRecords).values(record).onConflictDoNothing({ target: [executionRecords.ownerId, executionRecords.idempotencyKey] }).returning(); if (inserted) return { record: inserted, inserted: true }; const [existing] = await db.select().from(executionRecords).where(and(eq(executionRecords.ownerId, record.ownerId), eq(executionRecords.idempotencyKey, record.idempotencyKey))); if (!existing) throw new Error("Execution reservation conflict could not be resolved"); return { record: existing, inserted: false }; }
+  async claimExecutionRecord(ownerId: string, id: string, actorId: string): Promise<ExecutionRecord | undefined> { const [record] = await db.update(executionRecords).set({ state: "RUNNING", updatedAt: new Date() }).where(and(eq(executionRecords.ownerId, ownerId), eq(executionRecords.id, id), eq(executionRecords.actorId, actorId), eq(executionRecords.state, "PENDING"))).returning(); return record; }
+  async updateExecutionRecordState(ownerId: string, id: string, state: string, resultEvidence: Record<string, unknown>, options: { actorId?: string; expectedStates?: string[] } = {}): Promise<ExecutionRecord | undefined> { const conditions = [eq(executionRecords.ownerId, ownerId), eq(executionRecords.id, id)]; if (options.actorId) conditions.push(eq(executionRecords.actorId, options.actorId)); if (options.expectedStates?.length) conditions.push(inArray(executionRecords.state, options.expectedStates)); const [record] = await db.update(executionRecords).set({ state, resultEvidence, updatedAt: new Date() }).where(and(...conditions)).returning(); return record; }
+  async getExecutionStateCounts(ownerId: string): Promise<Array<{ state: string; count: number }>> { return db.select({ state: executionRecords.state, count: sql<number>`count(*)::int` }).from(executionRecords).where(eq(executionRecords.ownerId, ownerId)).groupBy(executionRecords.state); }
+
   // Threat patterns
   async getThreatPatterns(): Promise<ThreatPattern[]> {
     const patterns = await db.select().from(threatPatterns);
@@ -272,7 +293,7 @@ export class DatabaseStorage implements IStorage {
   async getLatestSystemMetrics(): Promise<SystemMetric[]> {
     const cacheKey = 'latest_metrics';
     const cached = cache.getMetrics(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as SystemMetric[];
 
     // Optimized query with better performance for dashboard
     const metrics = await db.select().from(systemMetrics)

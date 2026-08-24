@@ -1,5 +1,5 @@
 # Multi-stage build for production deployment
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 
 # Set working directory
 WORKDIR /app
@@ -8,16 +8,17 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source code
 COPY . .
 
 # Build the application
 RUN npm run build
+RUN npm prune --omit=dev
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:20-alpine AS production
 
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
@@ -42,7 +43,7 @@ EXPOSE 5000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5000/api/dashboard/status || exit 1
+  CMD wget -q -O /dev/null http://localhost:5000/api/firewall/public-status || exit 1
 
 # Start the application
 ENTRYPOINT ["dumb-init", "--"]

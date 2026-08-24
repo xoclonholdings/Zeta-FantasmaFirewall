@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: fantasma-firewall
+    name: zena-control
     env: node
     buildCommand: npm run build
     startCommand: npm start
-    healthCheckPath: /api/dashboard/status
+    healthCheckPath: /api/firewall/public-status
     envVars:
       - key: NODE_ENV
         value: production
@@ -13,4 +13,4 @@ services:
     autoDeploy: true
     scaling:
       minInstances: 1
-      maxInstances: 3
+      maxInstances: 1

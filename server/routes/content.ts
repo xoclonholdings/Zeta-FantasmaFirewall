@@ -1,119 +1,22 @@
 import type { Express } from "express";
-
+import { z } from "zod";
 import { storage } from "../storage";
-
+import { asyncRoute } from "../security/async-route";
+import { requirePrincipal } from "../security/authentication";
+import { requireExecutionReservation } from "../security/execution-reservation";
+const read = requirePrincipal({ scopes: ["zena:content:read"], roles: ["content-admin"] }), write = requirePrincipal({ scopes: ["zena:content:write"], roles: ["content-admin"] });
+const faq = z.object({ categoryId: z.number().int().positive(), question: z.string().min(1).max(500), answer: z.string().min(1).max(10000), displayOrder: z.number().int().min(0).optional(), isActive: z.boolean().optional() }).strict();
+const guide = z.object({ title: z.string().min(1).max(255), description: z.string().max(2000).nullable().optional(), content: z.string().min(1).max(100000), category: z.string().max(100).nullable().optional(), difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(), estimatedTime: z.string().max(50).nullable().optional(), displayOrder: z.number().int().min(0).optional(), isActive: z.boolean().optional() }).strict();
 export function registerContentRoutes(app: Express) {
-  app.get("/api/faq", async (_req, res) => {
-    try {
-      const [categories, items] = await Promise.all([storage.getFaqCategories(), storage.getFaqItems()]);
-      res.json({ categories, items });
-    } catch (error) {
-      console.error("Error fetching FAQ data:", error);
-      res.status(500).json({ error: "Failed to fetch FAQ data" });
-    }
-  });
-
-  app.get("/api/how-to-guides", async (_req, res) => {
-    try {
-      const guides = await storage.getHowToGuides();
-      res.json(guides);
-    } catch (error) {
-      console.error("Error fetching how-to guides:", error);
-      res.status(500).json({ error: "Failed to fetch how-to guides" });
-    }
-  });
-
-  app.get("/api/how-to-guides/:id", async (req, res) => {
-    try {
-      const guide = await storage.getHowToGuideById(Number(req.params.id));
-      if (!guide) {
-        res.status(404).json({ error: "Guide not found" });
-        return;
-      }
-      res.json(guide);
-    } catch (error) {
-      console.error("Error fetching how-to guide:", error);
-      res.status(500).json({ error: "Failed to fetch how-to guide" });
-    }
-  });
-
-  app.get("/api/admin/faq", async (_req, res) => {
-    try {
-      const [categories, items] = await Promise.all([storage.getFaqCategories(), storage.getFaqItems()]);
-      res.json({ categories, items });
-    } catch (error) {
-      console.error("Error fetching admin FAQ data:", error);
-      res.status(500).json({ error: "Failed to fetch FAQ data" });
-    }
-  });
-
-  app.post("/api/admin/faq/items", async (req, res) => {
-    try {
-      const item = await storage.createFaqItem(req.body);
-      res.json(item);
-    } catch (error) {
-      console.error("Error creating FAQ item:", error);
-      res.status(500).json({ error: "Failed to create FAQ item" });
-    }
-  });
-
-  app.put("/api/admin/faq/items/:id", async (req, res) => {
-    try {
-      const item = await storage.updateFaqItem(Number(req.params.id), req.body);
-      res.json(item);
-    } catch (error) {
-      console.error("Error updating FAQ item:", error);
-      res.status(500).json({ error: "Failed to update FAQ item" });
-    }
-  });
-
-  app.delete("/api/admin/faq/items/:id", async (req, res) => {
-    try {
-      await storage.deleteFaqItem(Number(req.params.id));
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting FAQ item:", error);
-      res.status(500).json({ error: "Failed to delete FAQ item" });
-    }
-  });
-
-  app.get("/api/admin/how-to-guides", async (_req, res) => {
-    try {
-      const guides = await storage.getHowToGuides();
-      res.json(guides);
-    } catch (error) {
-      console.error("Error fetching admin how-to guides:", error);
-      res.status(500).json({ error: "Failed to fetch how-to guides" });
-    }
-  });
-
-  app.post("/api/admin/how-to-guides", async (req, res) => {
-    try {
-      const guide = await storage.createHowToGuide(req.body);
-      res.json(guide);
-    } catch (error) {
-      console.error("Error creating how-to guide:", error);
-      res.status(500).json({ error: "Failed to create how-to guide" });
-    }
-  });
-
-  app.put("/api/admin/how-to-guides/:id", async (req, res) => {
-    try {
-      const guide = await storage.updateHowToGuide(Number(req.params.id), req.body);
-      res.json(guide);
-    } catch (error) {
-      console.error("Error updating how-to guide:", error);
-      res.status(500).json({ error: "Failed to update how-to guide" });
-    }
-  });
-
-  app.delete("/api/admin/how-to-guides/:id", async (req, res) => {
-    try {
-      await storage.deleteHowToGuide(Number(req.params.id));
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting how-to guide:", error);
-      res.status(500).json({ error: "Failed to delete how-to guide" });
-    }
-  });
+  app.get("/api/faq", asyncRoute(async (_req, res) => { const [categories, items] = await Promise.all([storage.getFaqCategories(), storage.getFaqItems()]); res.json({ categories, items }); }));
+  app.get("/api/how-to-guides", asyncRoute(async (_req, res) => res.json(await storage.getHowToGuides())));
+  app.get("/api/how-to-guides/:id", asyncRoute(async (req, res) => { const item = await storage.getHowToGuideById(Number(req.params.id)); item ? res.json(item) : res.status(404).json({ error: "GUIDE_NOT_FOUND" }); }));
+  app.get("/api/admin/faq", read, asyncRoute(async (_req, res) => { const [categories, items] = await Promise.all([storage.getFaqCategories(), storage.getFaqItems()]); res.json({ categories, items }); }));
+  app.post("/api/admin/faq/items", write, requireExecutionReservation("zena.content.faq.create"), asyncRoute(async (req, res) => res.json(await storage.createFaqItem(faq.parse(req.body)))));
+  app.put("/api/admin/faq/items/:id", write, requireExecutionReservation("zena.content.faq.update"), asyncRoute(async (req, res) => res.json(await storage.updateFaqItem(Number(req.params.id), faq.parse(req.body)))));
+  app.delete("/api/admin/faq/items/:id", write, requireExecutionReservation("zena.content.faq.archive"), asyncRoute(async (req, res) => { await storage.deleteFaqItem(Number(req.params.id)); res.json({ success: true }); }));
+  app.get("/api/admin/how-to-guides", read, asyncRoute(async (_req, res) => res.json(await storage.getHowToGuides())));
+  app.post("/api/admin/how-to-guides", write, requireExecutionReservation("zena.content.guide.create"), asyncRoute(async (req, res) => res.json(await storage.createHowToGuide(guide.parse(req.body)))));
+  app.put("/api/admin/how-to-guides/:id", write, requireExecutionReservation("zena.content.guide.update"), asyncRoute(async (req, res) => res.json(await storage.updateHowToGuide(Number(req.params.id), guide.parse(req.body)))));
+  app.delete("/api/admin/how-to-guides/:id", write, requireExecutionReservation("zena.content.guide.archive"), asyncRoute(async (req, res) => { await storage.deleteHowToGuide(Number(req.params.id)); res.json({ success: true }); }));
 }

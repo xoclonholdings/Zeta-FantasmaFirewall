@@ -1,0 +1,4 @@
+import assert from "node:assert/strict"; import test from "node:test"; import { redactProtectedData } from "./redaction"; import { duplicateExecutionDecision } from "./retry-safety";
+test("redacts credentials",()=>{const v=redactProtectedData({apiKey:"secret",nested:{authorization:"Bearer abcdefghijklmnopqrstuvwxyz"},reference:"provider://connection-1"}) as any;assert.equal(v.apiKey,"[REDACTED_REFERENCE_ONLY]");assert.equal(v.reference,"provider://connection-1")});
+test("blocks unknown duplicate",()=>{const d=duplicateExecutionDecision({id:"e1",state:"UNKNOWN",requestFingerprint:"same"},"same","scope");assert.equal(d.decision,"BLOCK");assert.equal(d.recovery.safeToRetry,false)});
+test("blocks changed idempotency scope",()=>assert.equal(duplicateExecutionDecision({id:"e1",state:"FAILED",requestFingerprint:"old"},"new","scope").riskLevel,"CRITICAL"));

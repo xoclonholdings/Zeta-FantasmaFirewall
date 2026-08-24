@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BookOpen, Clock } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import { Link, useRoute } from "wouter";
 
 import { fetchJson } from "@/lib/api";
@@ -76,7 +75,7 @@ export default function HowToDetail() {
 
         <Card className="bg-navy-800 border-navy-600">
           <CardContent className="prose prose-invert max-w-none p-8 prose-headings:text-white prose-p:text-slate-300 prose-strong:text-white">
-            <ReactMarkdown>{guide.content}</ReactMarkdown>
+            <div className="whitespace-pre-wrap">{guide.content}</div>
           </CardContent>
         </Card>
       </div>

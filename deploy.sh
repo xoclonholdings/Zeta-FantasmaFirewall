@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# Fantasma Firewall Self-Hosting Deployment Script
+# ZENA Control self-hosting deployment script
 # This script automates the deployment process on your own server
 
 set -e  # Exit on any error
 
-echo "🛡️  Fantasma Firewall Self-Hosting Deployment"
+echo "ZENA Control Self-Hosting Deployment"
 echo "=============================================="
 
 # Configuration
-APP_NAME="fantasma-firewall"
+APP_NAME="zena-control"
 APP_DIR="/var/www/$APP_NAME"
 DOMAIN_NAME=""
-DB_NAME="fantasma_firewall"
-DB_USER="fantasma_user"
+DB_NAME="zena_control"
+DB_USER="zena_control"
 NGINX_AVAILABLE="/etc/nginx/sites-available/$APP_NAME"
 NGINX_ENABLED="/etc/nginx/sites-enabled/$APP_NAME"
 
@@ -87,12 +87,16 @@ update_system() {
 install_nodejs() {
     if command -v node &> /dev/null; then
         NODE_VERSION=$(node --version)
-        print_status "Node.js already installed: $NODE_VERSION"
-        return
+        NODE_MAJOR=$(node -p "Number(process.versions.node.split('.')[0])")
+        if [ "$NODE_MAJOR" -ge 20 ]; then
+            print_status "Node.js already installed: $NODE_VERSION"
+            return
+        fi
+        print_warning "Node.js $NODE_VERSION is below the required major version 20; upgrading"
     fi
     
-    print_status "Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    print_status "Installing Node.js 20..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
     sudo apt-get install -y nodejs
     
     # Verify installation
@@ -147,7 +151,7 @@ setup_database() {
     print_status "Setting up database..."
     
     # Generate random password
-    DB_PASSWORD=$(openssl rand -base64 32)
+    DB_PASSWORD=$(openssl rand -hex 32)
     
     # Create database and user
     sudo -u postgres psql << EOF
@@ -206,7 +210,7 @@ build_application() {
     print_status "Installing dependencies and building application..."
     
     cd "$APP_DIR"
-    npm ci --production
+    npm ci
     npm run build
     
     print_status "✓ Application built successfully"
@@ -226,7 +230,11 @@ setup_environment() {
 NODE_ENV=production
 PORT=3000
 $DB_CREDS
-SESSION_SECRET=$(openssl rand -base64 64)
+ZCOS_TRUSTED_GATEWAY_SECRET=$(openssl rand -hex 48)
+ZCOS_GRANT_SIGNING_SECRET=$(openssl rand -hex 48)
+ZCOS_APPROVAL_SIGNING_SECRET=$(openssl rand -hex 48)
+ZCOS_CAPABILITY_SIGNING_SECRET=$(openssl rand -hex 48)
+ZCOS_ISOLATION_SIGNING_SECRET=$(openssl rand -hex 48)
 NODE_OPTIONS="--max-old-space-size=4096"
 EOF
     
@@ -251,7 +259,11 @@ run_migrations() {
     print_status "Running database migrations..."
     
     cd "$APP_DIR"
+    set -a
+    . ./.env
+    set +a
     npm run db:push
+    npm prune --omit=dev
     
     print_status "✓ Database migrations completed"
 }
@@ -265,6 +277,10 @@ setup_pm2() {
     # Stop existing process if running
     pm2 delete $APP_NAME 2>/dev/null || true
     
+    set -a
+    . ./.env
+    set +a
+
     # Start application
     pm2 start ecosystem.config.js --env production
     
@@ -345,7 +361,7 @@ final_checks() {
     fi
     
     # Check if nginx is serving correctly
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/dashboard/status" | grep -q "200"; then
+    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/firewall/public-status" | grep -q "200"; then
         print_status "✓ Application responding correctly"
     else
         print_error "Application not responding correctly"
@@ -368,7 +384,7 @@ completion_message() {
     echo "🎉 Deployment completed successfully!"
     echo "=================================="
     echo ""
-    echo "Your Fantasma Firewall is now running at:"
+    echo "ZENA Control is now running at:"
     echo "• HTTP:  http://$DOMAIN_NAME"
     echo "• HTTPS: https://$DOMAIN_NAME"
     echo ""
@@ -385,15 +401,15 @@ completion_message() {
     echo ""
     echo "Next steps:"
     echo "1. Update DNS records to point to this server"
-    echo "2. Test the application functionality"
-    echo "3. Setup monitoring and backups"
+    echo "2. Configure authenticated ZCOS ingress and signed authority grants"
+    echo "3. Configure append-only evidence retention, monitoring, and backups"
     echo ""
     print_status "Deployment complete! 🚀"
 }
 
 # Main deployment function
 main() {
-    print_status "Starting Fantasma Firewall deployment..."
+    print_status "Starting ZENA Control deployment..."
     
     check_root
     check_requirements
@@ -406,10 +422,10 @@ main() {
     install_certbot
     setup_app_directory
     copy_application
-    build_application
-    setup_environment
-    setup_logging
     setup_database
+    setup_environment
+    build_application
+    setup_logging
     run_migrations
     setup_pm2
     setup_nginx

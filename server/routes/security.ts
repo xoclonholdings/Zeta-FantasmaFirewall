@@ -1,322 +1,36 @@
 import type { Express } from "express";
 import { z } from "zod";
-
 import { storage } from "../storage";
 import { badActorService } from "../services/bad-actor-service";
 import { firewallService } from "../services/firewall-service";
-import { zetaCore } from "../services/zeta-core";
-
+import { zenaIntegrityCore } from "../services/zena-integrity-core";
+import { asyncRoute } from "../security/async-route";
+import { getPrincipal, requirePrincipal, requireZenaIntegrationPrincipal } from "../security/authentication";
+import { requireExecutionReservation } from "../security/execution-reservation";
+const integrityRead = requirePrincipal({ scopes: ["integrity:read"] }), rootRead = requirePrincipal({ scopes: ["zcos:root:security:read"], roles: ["platform-owner"] }), rootWrite = requirePrincipal({ scopes: ["zcos:root:security:write"], roles: ["platform-owner"] });
+const opaque = z.string().max(512).regex(/^[a-z][a-z0-9+.-]*:\/\/[A-Za-z0-9._:/-]+$/i);
 export function registerSecurityRoutes(app: Express) {
-  app.get("/api/integration/firewall/status", async (req, res) => {
-    const configuredToken = process.env.ZETA_SHARED_TOKEN?.trim();
-    const bearerToken = req.headers.authorization?.replace(/^Bearer\s+/i, "").trim();
-    const headerToken = typeof req.headers["x-zeta-integration-token"] === "string"
-      ? req.headers["x-zeta-integration-token"].trim()
-      : "";
-
-    if (configuredToken && bearerToken !== configuredToken && headerToken !== configuredToken) {
-      res.status(401).json({ message: "Unauthorized integration request" });
-      return;
-    }
-
-    try {
-      const [systemMetrics, securityEvents, zetaCoreStatus] = await Promise.all([
-        storage.getLatestSystemMetrics(),
-        storage.getSecurityEvents(10),
-        zetaCore.getStatus(),
-      ]);
-
-      res.json({
-        system: "Fantasma Firewall",
-        status: "operational",
-        visibility: {
-          publicBaseUrl: process.env.ZETA_PUBLIC_BASE_URL?.trim() || "",
-          vpnBaseUrl: process.env.ZETA_VPN_BASE_URL?.trim() || "",
-          vpnProvider: process.env.ZETA_VPN_PROVIDER?.trim() || "",
-        },
-        zetaCore: zetaCoreStatus,
-        threatCounters: firewallService.getThreatCounters(),
-        latestMetrics: systemMetrics,
-        recentSecurityEvents: securityEvents,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch firewall integration status" });
-    }
-  });
-
-  app.get("/api/firewall/public-status", async (_req, res) => {
-    try {
-      const [systemMetrics, zetaCoreStatus] = await Promise.all([
-        storage.getLatestSystemMetrics(),
-        zetaCore.getStatus(),
-      ]);
-
-      res.json({
-        system: "Fantasma Firewall",
-        status: "operational",
-        publicBaseUrl: process.env.ZETA_PUBLIC_BASE_URL?.trim() || "",
-        vpnProvider: process.env.ZETA_VPN_PROVIDER?.trim() || "",
-        zetaCore: zetaCoreStatus,
-        threatCounters: firewallService.getThreatCounters(),
-        latestMetrics: systemMetrics,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch public firewall status" });
-    }
-  });
-
-  app.get("/api/dashboard/status", async (_req, res) => {
-    try {
-      const [securityEvents, systemMetrics, zwapProtection, encryptionLayers, networkNodes, zetaCoreStatus] =
-        await Promise.all([
-          storage.getSecurityEvents(20),
-          storage.getLatestSystemMetrics(),
-          storage.getZwapProtectionStatus(),
-          storage.getEncryptionLayers(),
-          storage.getNetworkNodes(),
-          zetaCore.getStatus(),
-        ]);
-
-      res.json({
-        zetaCore: zetaCoreStatus,
-        threatCounters: firewallService.getThreatCounters(),
-        securityEvents,
-        systemMetrics,
-        zwapProtection,
-        encryptionLayers,
-        networkNodes,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch dashboard status" });
-    }
-  });
-
-  app.get("/api/security-events", async (req, res) => {
-    try {
-      const limit = Number(req.query.limit) || 50;
-      const events = await storage.getSecurityEvents(limit);
-      res.json(events);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch security events" });
-    }
-  });
-
-  app.post("/api/security-events", async (req, res) => {
-    try {
-      const eventSchema = z.object({
-        eventType: z.string(),
-        severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-        source: z.string(),
-        target: z.string().optional(),
-        description: z.string(),
-        metadata: z.any().optional(),
-        status: z.string().default("ACTIVE"),
-      });
-
-      const event = await storage.createSecurityEvent(eventSchema.parse(req.body));
-      res.json(event);
-    } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid event data" });
-    }
-  });
-
-  app.patch("/api/security-events/:id/status", async (req, res) => {
-    try {
-      if (!req.body.status) {
-        res.status(400).json({ message: "Status is required" });
-        return;
-      }
-
-      const event = await storage.updateSecurityEventStatus(Number(req.params.id), req.body.status);
-      if (!event) {
-        res.status(404).json({ message: "Security event not found" });
-        return;
-      }
-
-      res.json(event);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update security event status" });
-    }
-  });
-
-  app.get("/api/threat-patterns", async (_req, res) => {
-    try {
-      res.json(await storage.getThreatPatterns());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch threat patterns" });
-    }
-  });
-
-  app.get("/api/zwap-protection", async (_req, res) => {
-    try {
-      res.json(await storage.getZwapProtectionStatus());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch ZWAP protection status" });
-    }
-  });
-
-  app.patch("/api/zwap-protection/:id", async (req, res) => {
-    try {
-      const { status, integrityScore } = req.body;
-      if (!status || integrityScore === undefined) {
-        res.status(400).json({ message: "Status and integrityScore are required" });
-        return;
-      }
-
-      const protection = await storage.updateZwapProtection(Number(req.params.id), status, integrityScore);
-      if (!protection) {
-        res.status(404).json({ message: "ZWAP protection component not found" });
-        return;
-      }
-
-      res.json(protection);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update ZWAP protection" });
-    }
-  });
-
-  app.get("/api/encryption-layers", async (_req, res) => {
-    try {
-      res.json(await storage.getEncryptionLayers());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch encryption layers" });
-    }
-  });
-
-  app.get("/api/network-nodes", async (_req, res) => {
-    try {
-      res.json(await storage.getNetworkNodes());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch network nodes" });
-    }
-  });
-
-  app.get("/api/zeta-core/status", async (_req, res) => {
-    try {
-      res.json(await zetaCore.getStatus());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch Zeta Core status" });
-    }
-  });
-
-  app.post("/api/zeta-core/analyze", async (req, res) => {
-    try {
-      const confidence = await zetaCore.analyzeCorpopateSabotage(req.body.data);
-      res.json({ confidence });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to analyze data" });
-    }
-  });
-
-  app.post("/api/firewall/detect-threat", async (req, res) => {
-    try {
-      const { source, target, threatType } = req.body;
-      if (!source || !target || !threatType) {
-        res.status(400).json({ message: "Source, target, and threatType are required" });
-        return;
-      }
-
-      const detected = await firewallService.detectThreat(source, target, threatType);
-      res.json({ detected, threatCounters: firewallService.getThreatCounters() });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to detect threat" });
-    }
-  });
-
-  app.get("/api/firewall/counters", (_req, res) => {
-    res.json(firewallService.getThreatCounters());
-  });
-
-  app.get("/api/bad-actors", async (_req, res) => {
-    try {
-      res.json(await storage.getBadActors());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch bad actors" });
-    }
-  });
-
-  app.post("/api/bad-actors/detect", async (req, res) => {
-    try {
-      const { identifier, identifierType, threatIndicators } = req.body;
-      if (!identifier || !identifierType) {
-        res.status(400).json({ message: "Identifier and identifierType are required" });
-        return;
-      }
-
-      res.json(await badActorService.detectAndTrackBadActor(identifier, identifierType, threatIndicators || {}));
-    } catch (error) {
-      res.status(500).json({ message: "Failed to detect bad actor" });
-    }
-  });
-
-  app.post("/api/bad-actors/:id/escalate", async (req, res) => {
-    try {
-      const actor = (await storage.getBadActors()).find((item) => item.id === Number(req.params.id));
-      if (!actor) {
-        res.status(404).json({ message: "Bad actor not found" });
-        return;
-      }
-
-      res.json(await storage.escalateBadActor(actor.identifier));
-    } catch (error) {
-      res.status(500).json({ message: "Failed to escalate bad actor" });
-    }
-  });
-
-  app.post("/api/bad-actors/:id/deploy-countermeasures", async (req, res) => {
-    try {
-      const actor = (await storage.getBadActors()).find((item) => item.id === Number(req.params.id));
-      if (!actor) {
-        res.status(404).json({ message: "Bad actor not found" });
-        return;
-      }
-
-      const { countermeasureType } = req.body;
-      switch (countermeasureType) {
-        case "honeypot":
-          res.json(await badActorService.deployHoneypotProtocol(actor.identifier));
-          return;
-        case "data_poisoning":
-          res.json(await badActorService.deployDataPoisoningProtocol(actor.id, actor.threatLevel));
-          return;
-        case "quantum_isolation":
-          res.json(await badActorService.deployQuantumIsolationProtocol(actor.id));
-          return;
-        case "data_deprecation":
-          res.json(await badActorService.deployDataDeprecationProtocol(actor.id, "API_KEY", "SUSPICIOUS_ACCESS"));
-          return;
-        default:
-          res.status(400).json({ message: "Invalid countermeasure type" });
-      }
-    } catch (error) {
-      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to deploy countermeasure" });
-    }
-  });
-
-  app.get("/api/data-deprecation", async (_req, res) => {
-    try {
-      res.json(await storage.getActiveDeprecations());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch data deprecations" });
-    }
-  });
-
-  app.get("/api/quantum-protocols", async (_req, res) => {
-    try {
-      res.json(await storage.getQuantumProtocols());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch quantum protocols" });
-    }
-  });
-
-  app.get("/api/threat-mitigation/status", async (_req, res) => {
-    try {
-      res.json(await badActorService.getActiveThreatMitigationStatus());
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch threat mitigation status" });
-    }
-  });
+  app.get("/api/firewall/public-status", (_req, res) => res.json({ system: "ZENA Control", status: "available", desk: "Integrity", surfaces: ["Logs", "Diagnostics", "Monitoring"], timestamp: new Date().toISOString() }));
+  app.get("/api/integration/firewall/status", requireZenaIntegrationPrincipal(), asyncRoute(async (req, res) => res.json({ system: "FanFI / Fantasma Firewall", zena: await zenaIntegrityCore.getStatus(getPrincipal(req).ownerId), timestamp: new Date().toISOString() })));
+  app.get("/api/dashboard/status", integrityRead, asyncRoute(async (req, res) => { const p = getPrincipal(req); const [zena, securityEvents, findings] = await Promise.all([zenaIntegrityCore.getStatus(p.ownerId), storage.getIntegrityEvents(p.ownerId, 20), storage.getIntegrityFindings(p.ownerId, 20)]); res.json({ zena, securityEvents, findings, timestamp: new Date().toISOString() }); }));
+  app.get("/api/security-events", integrityRead, asyncRoute(async (req, res) => { res.setHeader("Deprecation", "true"); res.json(await storage.getIntegrityEvents(getPrincipal(req).ownerId, 50)); }));
+  app.post("/api/security-events", integrityRead, (_req, res) => res.status(410).json({ error: "LEGACY_MUTATION_RETIRED", recovery: "Use typed Integrity observations or authorization." }));
+  app.patch("/api/security-events/:id/status", integrityRead, (_req, res) => res.status(410).json({ error: "APPEND_ONLY_EVIDENCE", recovery: "Record a new resolution event." }));
+  app.get("/api/zena-core/status", integrityRead, asyncRoute(async (req, res) => res.json(await zenaIntegrityCore.getStatus(getPrincipal(req).ownerId))));
+  app.get("/api/zeta-core/status", (_req, res) => res.redirect(308, "/api/zena-core/status"));
+  app.post("/api/zeta-core/analyze", integrityRead, (_req, res) => res.status(410).json({ error: "RAW_ANALYSIS_ROUTE_RETIRED", recovery: "Quarantine and classify input, then submit references and hashes." }));
+  app.get("/api/threat-patterns", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getThreatPatterns())));
+  app.get("/api/zwap-protection", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getZwapProtectionStatus())));
+  app.get("/api/encryption-layers", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getEncryptionLayers())));
+  app.get("/api/network-nodes", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getNetworkNodes())));
+  app.get("/api/firewall/counters", rootRead, (_req, res) => res.json(firewallService.getThreatCounters()));
+  app.get("/api/bad-actors", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getBadActors())));
+  app.get("/api/data-deprecation", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getActiveDeprecations())));
+  app.get("/api/quantum-protocols", rootRead, asyncRoute(async (_req, res) => res.json(await storage.getQuantumProtocols())));
+  app.get("/api/threat-mitigation/status", rootRead, asyncRoute(async (_req, res) => res.json(await badActorService.getActiveThreatMitigationStatus())));
+  app.patch("/api/zwap-protection/:id", rootWrite, requireExecutionReservation("zena.legacy.zwap-protection.update"), asyncRoute(async (req, res) => { const parsed = z.object({ status: z.enum(["SECURE", "VULNERABLE", "UNDER_ATTACK"]), integrityScore: z.number().int().min(0).max(100) }).strict().safeParse(req.body); if (!parsed.success) return void res.status(400).json({ error: "INVALID_PROTECTION_UPDATE" }); const updated = await storage.updateZwapProtection(Number(req.params.id), parsed.data.status, parsed.data.integrityScore); if (!updated) return void res.status(404).json({ error: "PROTECTION_COMPONENT_NOT_FOUND" }); res.json(updated); }));
+  app.post("/api/firewall/detect-threat", rootWrite, requireExecutionReservation("zena.legacy.firewall.detect"), asyncRoute(async (req, res) => { const parsed = z.object({ sourceRef: opaque, targetRef: opaque, threatType: z.string().min(1).max(100) }).strict().safeParse(req.body); if (!parsed.success) return void res.status(400).json({ error: "INVALID_THREAT_OBSERVATION" }); res.json({ detected: await firewallService.detectThreat(parsed.data.sourceRef, parsed.data.targetRef, parsed.data.threatType) }); }));
+  app.post("/api/bad-actors/detect", rootWrite, requireExecutionReservation("zena.legacy.actor.detect"), asyncRoute(async (req, res) => { const parsed = z.object({ identifierRef: opaque, identifierType: z.enum(["IP_ADDRESS", "WALLET", "DEVICE_ID", "EMAIL"]), threatIndicators: z.object({ suspiciousActivity: z.boolean().optional(), repeatedAccess: z.boolean().optional(), unauthorizedAttempts: z.number().int().min(0).max(100).optional(), dataExfiltration: z.boolean().optional() }).strict().default({}) }).strict().safeParse(req.body); if (!parsed.success) return void res.status(400).json({ error: "INVALID_ACTOR_OBSERVATION" }); res.json(await badActorService.detectAndTrackBadActor(parsed.data.identifierRef, parsed.data.identifierType, parsed.data.threatIndicators)); }));
+  app.post("/api/bad-actors/:id/escalate", rootWrite, requireExecutionReservation("zena.legacy.actor.escalate"), asyncRoute(async (req, res) => { const actor = (await storage.getBadActors()).find((x) => x.id === Number(req.params.id)); if (!actor) return void res.status(404).json({ error: "ACTOR_NOT_FOUND" }); res.json(await storage.escalateBadActor(actor.identifier)); }));
+  app.post("/api/bad-actors/:id/deploy-countermeasures", rootWrite, (_req, res) => res.status(410).json({ error: "UNCERTIFIED_COUNTERMEASURE_RETIRED", recovery: "Route real containment through ZCOS approval and ZENA execution security." }));
 }

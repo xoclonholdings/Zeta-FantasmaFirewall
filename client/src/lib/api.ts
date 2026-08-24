@@ -9,8 +9,8 @@ export async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit)
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with status ${response.status}`);
+    const body = await response.json().catch(() => ({})) as { error?: string; message?: string; recovery?: string };
+    throw new Error([body.error, body.message, body.recovery].filter(Boolean).join(": ") || `Request failed with status ${response.status}`);
   }
 
   return response.json() as Promise<T>;

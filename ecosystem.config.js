@@ -1,9 +1,9 @@
 module.exports = {
   apps: [{
-    name: 'fantasma-firewall',
+    name: 'zena-control',
     script: 'dist/index.js',
-    instances: 'max', // Use all CPU cores
-    exec_mode: 'cluster',
+    instances: 1,
+    exec_mode: 'fork',
     env: {
       NODE_ENV: 'development',
       PORT: 3000
@@ -13,9 +13,9 @@ module.exports = {
       PORT: 3000
     },
     // Logging
-    log_file: '/var/log/fantasma-firewall/combined.log',
-    out_file: '/var/log/fantasma-firewall/out.log',
-    error_file: '/var/log/fantasma-firewall/error.log',
+    log_file: '/var/log/zena-control/combined.log',
+    out_file: '/var/log/zena-control/out.log',
+    error_file: '/var/log/zena-control/error.log',
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     
     // Auto-restart on crashes

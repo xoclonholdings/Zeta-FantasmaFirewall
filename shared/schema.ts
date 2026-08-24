@@ -1,6 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, varchar, index, serial } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+import { pgTable, text, integer, boolean, timestamp, jsonb, varchar, index, serial, uniqueIndex } from "drizzle-orm/pg-core";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -51,6 +49,73 @@ export const securityEvents = pgTable("security_events", {
   timestamp: timestamp("timestamp").defaultNow().notNull(),
   status: text("status").notNull().default("ACTIVE"), // ACTIVE, RESOLVED, INVESTIGATING
 });
+
+export const integrityEvents = pgTable("integrity_events", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  ownerId: varchar("owner_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestId: varchar("request_id", { length: 128 }).notNull(),
+  traceId: varchar("trace_id", { length: 128 }).notNull(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull(),
+  outcome: varchar("outcome", { length: 32 }).notNull(),
+  capability: varchar("capability", { length: 160 }),
+  provider: varchar("provider", { length: 160 }),
+  connector: varchar("connector", { length: 160 }),
+  destination: varchar("destination", { length: 255 }),
+  summary: text("summary").notNull(),
+  permissionScope: jsonb("permission_scope").notNull().default([]),
+  risk: jsonb("risk").notNull().default({}),
+  evidence: jsonb("evidence").notNull().default({}),
+  recovery: jsonb("recovery").notNull().default({}),
+  eventHash: varchar("event_hash", { length: 64 }).notNull(),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [
+  index("IDX_integrity_events_owner_time").on(table.ownerId, table.occurredAt),
+  index("IDX_integrity_events_trace").on(table.traceId),
+  index("IDX_integrity_events_outcome").on(table.outcome),
+]);
+
+export const executionRecords = pgTable("execution_records", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  ownerId: varchar("owner_id", { length: 255 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  requestId: varchar("request_id", { length: 128 }).notNull(),
+  traceId: varchar("trace_id", { length: 128 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
+  requestFingerprint: varchar("request_fingerprint", { length: 64 }).notNull(),
+  executionBindingHash: varchar("execution_binding_hash", { length: 64 }),
+  approvalScopeHash: varchar("approval_scope_hash", { length: 64 }),
+  capability: varchar("capability", { length: 160 }).notNull(),
+  operation: varchar("operation", { length: 50 }).notNull(),
+  destination: varchar("destination", { length: 255 }).notNull(),
+  sideEffectClass: varchar("side_effect_class", { length: 32 }).notNull(),
+  riskLevel: varchar("risk_level", { length: 20 }).notNull(),
+  state: varchar("state", { length: 32 }).notNull(),
+  attempts: integer("attempts").notNull().default(1),
+  resultEvidence: jsonb("result_evidence").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("UQ_execution_owner_idempotency").on(table.ownerId, table.idempotencyKey),
+  index("IDX_execution_owner_state").on(table.ownerId, table.state),
+  index("IDX_execution_trace").on(table.traceId),
+]);
+
+export const integrityFindings = pgTable("integrity_findings", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  ownerId: varchar("owner_id", { length: 255 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull(),
+  state: varchar("state", { length: 32 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: text("summary").notNull(),
+  affectedScope: jsonb("affected_scope").notNull().default({}),
+  evidenceEventIds: jsonb("evidence_event_ids").notNull().default([]),
+  recovery: jsonb("recovery").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [index("IDX_integrity_findings_owner_state").on(table.ownerId, table.state)]);
 
 export const threatPatterns = pgTable("threat_patterns", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -173,44 +238,35 @@ export const howToGuides = pgTable("how_to_guides", {
 
 export type User = typeof users.$inferSelect;
 
-// Insert schemas without problematic omits
-export const insertUserSchema = createInsertSchema(users);
-export const insertSecurityEventSchema = createInsertSchema(securityEvents);
-export const insertThreatPatternSchema = createInsertSchema(threatPatterns);
-export const insertSystemMetricSchema = createInsertSchema(systemMetrics);
-export const insertZwapProtectionSchema = createInsertSchema(zwapProtection);
-export const insertEncryptionLayerSchema = createInsertSchema(encryptionLayers);
-export const insertNetworkNodeSchema = createInsertSchema(networkNodes);
-export const insertBadActorSchema = createInsertSchema(badActors);
-export const insertDataDeprecationSchema = createInsertSchema(dataDeprecation);
-export const insertQuantumProtocolSchema = createInsertSchema(quantumProtocols);
-export const insertFaqCategorySchema = createInsertSchema(faqCategories);
-export const insertFaqItemSchema = createInsertSchema(faqItems);
-export const insertHowToGuideSchema = createInsertSchema(howToGuides);
-
 // Types
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertUser = typeof users.$inferInsert;
 export type SecurityEvent = typeof securityEvents.$inferSelect;
-export type InsertSecurityEvent = z.infer<typeof insertSecurityEventSchema>;
+export type InsertSecurityEvent = typeof securityEvents.$inferInsert;
+export type IntegrityEvent = typeof integrityEvents.$inferSelect;
+export type InsertIntegrityEvent = typeof integrityEvents.$inferInsert;
+export type ExecutionRecord = typeof executionRecords.$inferSelect;
+export type InsertExecutionRecord = typeof executionRecords.$inferInsert;
+export type IntegrityFinding = typeof integrityFindings.$inferSelect;
+export type InsertIntegrityFinding = typeof integrityFindings.$inferInsert;
 export type ThreatPattern = typeof threatPatterns.$inferSelect;
-export type InsertThreatPattern = z.infer<typeof insertThreatPatternSchema>;
+export type InsertThreatPattern = typeof threatPatterns.$inferInsert;
 export type SystemMetric = typeof systemMetrics.$inferSelect;
-export type InsertSystemMetric = z.infer<typeof insertSystemMetricSchema>;
+export type InsertSystemMetric = typeof systemMetrics.$inferInsert;
 export type ZwapProtection = typeof zwapProtection.$inferSelect;
-export type InsertZwapProtection = z.infer<typeof insertZwapProtectionSchema>;
+export type InsertZwapProtection = typeof zwapProtection.$inferInsert;
 export type EncryptionLayer = typeof encryptionLayers.$inferSelect;
-export type InsertEncryptionLayer = z.infer<typeof insertEncryptionLayerSchema>;
+export type InsertEncryptionLayer = typeof encryptionLayers.$inferInsert;
 export type NetworkNode = typeof networkNodes.$inferSelect;
-export type InsertNetworkNode = z.infer<typeof insertNetworkNodeSchema>;
+export type InsertNetworkNode = typeof networkNodes.$inferInsert;
 export type BadActor = typeof badActors.$inferSelect;
-export type InsertBadActor = z.infer<typeof insertBadActorSchema>;
+export type InsertBadActor = typeof badActors.$inferInsert;
 export type DataDeprecation = typeof dataDeprecation.$inferSelect;
-export type InsertDataDeprecation = z.infer<typeof insertDataDeprecationSchema>;
+export type InsertDataDeprecation = typeof dataDeprecation.$inferInsert;
 export type QuantumProtocol = typeof quantumProtocols.$inferSelect;
-export type InsertQuantumProtocol = z.infer<typeof insertQuantumProtocolSchema>;
+export type InsertQuantumProtocol = typeof quantumProtocols.$inferInsert;
 export type FaqCategory = typeof faqCategories.$inferSelect;
-export type InsertFaqCategory = z.infer<typeof insertFaqCategorySchema>;
+export type InsertFaqCategory = typeof faqCategories.$inferInsert;
 export type FaqItem = typeof faqItems.$inferSelect;
-export type InsertFaqItem = z.infer<typeof insertFaqItemSchema>;
+export type InsertFaqItem = typeof faqItems.$inferInsert;
 export type HowToGuide = typeof howToGuides.$inferSelect;
-export type InsertHowToGuide = z.infer<typeof insertHowToGuideSchema>;
+export type InsertHowToGuide = typeof howToGuides.$inferInsert;
